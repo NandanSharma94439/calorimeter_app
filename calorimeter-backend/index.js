@@ -223,9 +223,10 @@ app.get('/barcode/:code', async (req, res) => {
 
     const p = r.data.product;
     const quantityText =
-      p.quantity ||
-      p.product_quantity ||
-      "";
+          p.serving_size ||
+          p.quantity ||
+          p.product_quantity ||
+          "100g";
 
     const grams = extractGrams(quantityText);
     const name = p.product_name || "Unknown Item";
