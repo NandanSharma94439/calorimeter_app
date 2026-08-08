@@ -394,29 +394,46 @@ If you cannot identify food in the image, return:
 
 Base estimates on a typical single serving portion visible in the image.`;
 
-    const geminiRes = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{
-          parts: [
-            { text: prompt },
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: imageBase64,
-              }
-            }
-          ]
-        }],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 256,
-        }
-      },
-      { headers: { 'Content-Type': 'application/json' } }
-    );
+    const models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+    let rawText = '';
+    let lastError = null;
 
-    const rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    for (const model of models) {
+      try {
+        const geminiRes = await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            contents: [{
+              parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: imageBase64,
+                  }
+                }
+              ]
+            }],
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 300,
+            }
+          },
+          { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
+        );
+
+        rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (rawText) break;
+      } catch (err) {
+        console.error(`Gemini model ${model} error:`, err.response?.data?.error?.message || err.message);
+        lastError = err;
+      }
+    }
+
+    if (!rawText && lastError) {
+      throw lastError;
+    }
+
     console.log('Gemini raw response:', rawText);
 
     // Extract JSON from response (handles markdown code blocks too)
@@ -442,7 +459,8 @@ Base estimates on a typical single serving portion visible in the image.`;
     if (err.response?.status === 429) {
       return res.status(429).json({ error: 'AI service busy. Please try again.' });
     }
-    res.status(500).json({ error: 'Image analysis failed. Please try again.' });
+    const errMsg = err.response?.data?.error?.message || err.message || 'Image analysis failed.';
+    res.status(500).json({ error: errMsg });
   }
 });
 
