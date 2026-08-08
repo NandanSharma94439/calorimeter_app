@@ -372,9 +372,9 @@ app.post('/analyze-image', aiLimiter, upload.single('image'), async (req, res) =
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      return res.status(500).json({ error: 'AI service not configured' });
+    const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim();
+    if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY_HERE') {
+      return res.status(500).json({ error: 'GEMINI_API_KEY missing in Render environment variables. Please add your key on Render dashboard.' });
     }
 
     const imageBase64 = req.file.buffer.toString('base64');
@@ -397,7 +397,7 @@ If you cannot identify food in the image, return:
 
 Base estimates on a typical single serving portion visible in the image.`;
 
-    const models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash-8b'];
     let rawText = '';
     let lastError = null;
 
@@ -428,7 +428,16 @@ Base estimates on a typical single serving portion visible in the image.`;
         rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
         if (rawText) break;
       } catch (err) {
-        console.error(`Gemini model ${model} error:`, err.response?.data?.error?.message || err.message);
+        const status = err.response?.status;
+        const msg = err.response?.data?.error?.message || err.message;
+        console.error(`Gemini model ${model} error (${status}):`, msg);
+
+        // If rate limited or quota exceeded, notify user directly
+        if (status === 429 || (msg && (msg.includes('Quota exceeded') || msg.includes('quota')))) {
+          return res.status(429).json({
+            error: 'Gemini free quota limit reached. Please wait 15 seconds and try again.'
+          });
+        }
         lastError = err;
       }
     }
