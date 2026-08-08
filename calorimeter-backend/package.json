@@ -1,22 +1,26 @@
 {
   "name": "calorimeter-backend",
-  "version": "1.0.0",
-  "description": "Backend for calorimeter app",
+  "version": "2.0.0",
+  "description": "Backend for Calorimeter app — food search, barcode lookup, AI image analysis",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js"
+    "dev": "nodemon index.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "Nandan Sharma",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "axios": "^1.14.0",
-    "body-parser": "^2.2.2",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.1",
-    "express": "^5.2.1",
-    "firebase-admin": "^13.7.0"
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "firebase-admin": "^13.0.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
   }
 }

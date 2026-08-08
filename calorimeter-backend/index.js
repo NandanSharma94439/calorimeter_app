@@ -1,260 +1,458 @@
 require('dotenv').config();
 
 const admin = require("firebase-admin");
+const express = require('express');
+const axios = require('axios');
+const cors = require('cors');
+const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 
-// 🔥 Parse env
+// ── Firebase Init ────────────────────────────────────────────────────────────
 const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
-// 🔥 Initialize ONLY ONCE (safe)
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
 const db = admin.firestore();
-
-const express = require('express');
 const app = express();
-const axios = require('axios');
-const cors = require('cors');
 
+// ── Middleware ───────────────────────────────────────────────────────────────
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
+// Multer — in-memory storage for image uploads (no disk I/O)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files allowed'));
+  },
+});
+
+// Rate limiter — prevent abuse on AI endpoint (costly calls)
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,       // 1 minute
+  max: 10,                    // 10 requests per minute per IP
+  message: { error: 'Too many requests. Please wait a moment.' },
+});
+
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: 'Too many requests.' },
+});
+
+app.use(generalLimiter);
+
+// ── Constants ────────────────────────────────────────────────────────────────
 const COLLECTION = 'foods';
+
 const pieceWeights = {
-  banana: 118,
-  egg: 50,
-  apple: 182,
-  roti: 40,
-  bread: 25
+  banana: 118, egg: 50, apple: 182,
+  roti: 40, bread: 25, orange: 131,
+  potato: 150, tomato: 123,
 };
 
+// ── API Key Auth ─────────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  if (req.headers['x-api-key'] !== process.env.SECRET_API_KEY) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  next();
+});
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function calculateNutrition(per100g, grams) {
   return Number(((per100g * grams) / 100).toFixed(1));
 }
 
+function getNutrientVal(nutriments, keys) {
+  if (!nutriments) return 0;
+  for (const k of keys) {
+    if (nutriments[k] !== undefined && nutriments[k] !== null && !isNaN(Number(nutriments[k])) && Number(nutriments[k]) > 0) {
+      return Number(nutriments[k]);
+    }
+  }
+  return 0;
+}
+
 function extractGrams(quantityText) {
   if (!quantityText) return 100;
+  const q = String(quantityText).toLowerCase().trim();
 
-  quantityText = quantityText.toLowerCase();
+  // Multi pack: "2 x 25g" or "2x25g" or "2 x 25 g"
+  const multiPack = q.match(/(\d+)\s*x\s*(\d+(\.\d+)?)\s*g/);
+  if (multiPack) return Number(multiPack[1]) * Number(multiPack[2]);
 
-  // Handle "2 x 25g"
-  const multiPack = quantityText.match(/(\d+)\s*x\s*(\d+)\s*g/);
-  if (multiPack) {
-    return Number(multiPack[1]) * Number(multiPack[2]);
-  }
+  // Kg: "1kg", "0.5 kg"
+  const kg = q.match(/(\d+(\.\d+)?)\s*kg/);
+  if (kg) return Number(kg[1]) * 1000;
 
-  // Handle "500g"
-  const grams = quantityText.match(/(\d+)\s*g/);
-  if (grams) {
-    return Number(grams[1]);
-  }
+  // L / Liter: "1.5l", "1 l"
+  const liter = q.match(/(\d+(\.\d+)?)\s*(l|liter|liters)/);
+  if (liter) return Number(liter[1]) * 1000;
 
-  // Handle "1kg"
-  const kg = quantityText.match(/(\d+(\.\d+)?)\s*kg/);
-  if (kg) {
-    return Number(kg[1]) * 1000;
-  }
+  // Grams: "50g", "70 g", "1 pack (70g)"
+  const grams = q.match(/(\d+(\.\d+)?)\s*g/);
+  if (grams) return Number(grams[1]);
 
-  // Handle "500ml"
-  const ml = quantityText.match(/(\d+)\s*ml/);
-  if (ml) {
-    return Number(ml[1]);
-  }
+  // Ml: "500ml", "250 ml"
+  const ml = q.match(/(\d+(\.\d+)?)\s*ml/);
+  if (ml) return Number(ml[1]);
+
+  // Plain number fallback
+  const num = q.match(/(\d+(\.\d+)?)/);
+  if (num && Number(num[1]) > 0) return Number(num[1]);
 
   return 100;
 }
 
-// 🔐 API KEY MIDDLEWARE
-app.use((req, res, next) => {
-  const key = req.headers['x-api-key'];
-
-  if (key !== process.env.SECRET_API_KEY) {
-    return res.status(403).send("Unauthorized");
-  }
-
-  next();
-});
-
-// ✅ ADD FOOD
+// ── ADD FOOD ─────────────────────────────────────────────────────────────────
 app.post('/add-food', async (req, res) => {
   try {
     const { uid, foodName, calories, protein, carbs, fat, imageUrl, quantity, unit } = req.body;
 
-    const foodData = {
+    if (!uid || !foodName) {
+      return res.status(400).json({ error: 'uid and foodName are required' });
+    }
+
+    const docRef = await db.collection(COLLECTION).add({
       uid,
       foodName,
       calories: Math.round(Number(calories)) || 0,
       protein: Number(protein) || 0,
       carbs: Number(carbs) || 0,
       fat: Number(fat) || 0,
-      imageUrl: imageUrl || "",
+      imageUrl: imageUrl || '',
       quantity: Number(quantity) || 1,
-      unit: unit || "serving",
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    };
+      unit: unit || 'serving',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
-    const docRef = await db.collection(COLLECTION).add(foodData);
-
-    res.send({ message: "Success", id: docRef.id });
-
-  } catch (error) {
-    res.status(500).send(error.message);
+    res.json({ message: 'Success', id: docRef.id });
+  } catch (err) {
+    console.error('add-food:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ✅ GET FOODS
+// ── GET FOODS (today only) ───────────────────────────────────────────────────
 app.get('/get-foods/:uid', async (req, res) => {
   try {
     const snapshot = await db.collection(COLLECTION)
       .where('uid', '==', req.params.uid)
       .get();
 
-    let foods = [];
-
+    const foods = [];
     snapshot.forEach(doc => {
       const d = doc.data();
-      foods.push({
-        id: doc.id,
-        ...d,
-        _ts: d.createdAt ? d.createdAt.toMillis() : Date.now()
-      });
+      const ts = d.createdAt ? d.createdAt.toMillis() : Date.now();
+
+      // Only return today's foods
+      const today = new Date();
+      const docDate = new Date(ts);
+      const isSameDay =
+        docDate.getDate() === today.getDate() &&
+        docDate.getMonth() === today.getMonth() &&
+        docDate.getFullYear() === today.getFullYear();
+
+      if (isSameDay) {
+        foods.push({ id: doc.id, ...d, _ts: ts });
+      }
     });
 
     foods.sort((a, b) => b._ts - a._ts);
-
-    res.send(foods);
-
-  } catch (error) {
-    res.status(500).send(error.message);
+    res.json(foods);
+  } catch (err) {
+    console.error('get-foods:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// 🗑️ DELETE FOOD
+// ── DELETE FOOD ──────────────────────────────────────────────────────────────
 app.delete('/delete-food/:id', async (req, res) => {
   try {
     await db.collection(COLLECTION).doc(req.params.id).delete();
-    res.send({ message: "Deleted" });
-  } catch (error) {
-    res.status(500).send(error.message);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    console.error('delete-food:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// 🔍 SEARCH FOOD
+// ── SEARCH FOOD ──────────────────────────────────────────────────────────────
 app.get('/search-food', async (req, res) => {
   try {
-    const {
-      name,
-      quantity = 1,
-      unit = "serving"
-    } = req.query;
-
-    const usdaRes = await axios.get(
-      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(name)}&api_key=${process.env.USDA_API_KEY}`
-    );
-
-    const food = usdaRes.data.foods[0];
-    if (!food) return res.status(404).send("Not found");
+    const { name, quantity = 1, unit = 'serving' } = req.query;
+    if (!name) return res.status(400).json({ error: 'name is required' });
 
     let nutrients = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+    let resultFoodName = name;
+    let imageUrl = '';
 
-    food.foodNutrients.forEach(n => {
-      const nid = Number(n.nutrientId);
-      const nname = n.nutrientName.toLowerCase();
-
-      if ([1008, 2047, 2048].includes(nid) || nname.includes("energy")) {
-        if (n.unitName === "KCAL") nutrients.calories = n.value;
-      }
-      if (nid === 1003 || nname === "protein") nutrients.protein = n.value;
-      if (nid === 1005 || nname.includes("carbohydrate")) nutrients.carbs = n.value;
-      if (nid === 1004 || nname.includes("fat")) nutrients.fat = n.value;
-    });
-
-    let grams = 100;
-let cleanName =
-  name.toLowerCase().split(" ")[0];
-
-// singular normalization
-if (cleanName.endsWith("s")) {
-  cleanName =
-    cleanName.slice(0, -1);
-}
-    if (unit === "g") grams = Number(quantity);
-    else if (unit === "kg") grams = Number(quantity) * 1000;
-    else if (unit === "pieces") {
-      const pieceWeight = pieceWeights[cleanName] || 100;
-      grams = Number(quantity) * pieceWeight;
-    }
-    else grams = Number(quantity) * 100;
-
-    let imageUrl = "";
+    // 1. Try USDA Search
+    let food = null;
     try {
-      const cleanQ = name.split(',')[0].split(' ')[0];
-      const pixRes = await axios.get(
-        `https://pixabay.com/api/?key=${process.env.PIXABAY_API_KEY}&q=${encodeURIComponent(cleanQ + " food")}&image_type=photo&category=food&safesearch=true`
+      const usdaRes = await axios.get(
+        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(name)}&api_key=${process.env.USDA_API_KEY}&pageSize=1`
       );
-      if (pixRes.data.hits.length > 0) imageUrl = pixRes.data.hits[0].webformatURL;
-    } catch (e) {}
+      food = usdaRes.data.foods?.[0];
+      if (food) {
+        resultFoodName = food.description;
+        food.foodNutrients.forEach(n => {
+          const nid = Number(n.nutrientId);
+          const nname = (n.nutrientName || '').toLowerCase();
+          if ([1008, 2047, 2048, 208].includes(nid) || nname.includes('energy') || nname.includes('calorie')) {
+            if (n.unitName === 'KCAL' || nname.includes('kcal') || !nutrients.calories) {
+              if (n.value > 0) nutrients.calories = n.value;
+            }
+          }
+          if (nid === 1003 || nid === 203 || nname.includes('protein')) {
+            if (n.value > 0) nutrients.protein = n.value;
+          }
+          if (nid === 1005 || nid === 205 || nname.includes('carbohydrate') || nname.includes('carb')) {
+            if (n.value > 0) nutrients.carbs = n.value;
+          }
+          if (nid === 1004 || nid === 204 || nname.includes('lipid') || nname.includes('fat')) {
+            if (n.value > 0) nutrients.fat = n.value;
+          }
+        });
+      }
+    } catch (e) {
+      console.error('USDA search error:', e.message);
+    }
 
-    res.send({
-      name: food.description,
+    // 2. Fallback to OpenFoodFacts if USDA has missing nutrients or no match
+    if (!food || (nutrients.protein === 0 && nutrients.carbs === 0)) {
+      try {
+        const offRes = await axios.get(
+          `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(name)}&search_simple=1&action=process&json=1&page_size=1`
+        );
+        const offProduct = offRes.data?.products?.[0];
+        if (offProduct) {
+          const n = offProduct.nutriments || {};
+          const quantityText = offProduct.serving_size || offProduct.quantity || offProduct.product_quantity || '100g';
+          const offGrams = extractGrams(quantityText);
+
+          let cal100 = getNutrientVal(n, ['energy-kcal_100g', 'energy-kcal_value', 'energy-kcal', 'energy_100g']);
+          if (cal100 > 0 && n['energy_100g'] && !n['energy-kcal_100g'] && !n['energy-kcal_value']) {
+            cal100 = Math.round(cal100 / 4.184);
+          }
+
+          let p100 = getNutrientVal(n, ['proteins_100g', 'proteins_value', 'proteins']);
+          let c100 = getNutrientVal(n, ['carbohydrates_100g', 'carbohydrates_value', 'carbohydrates']);
+          let f100 = getNutrientVal(n, ['fat_100g', 'fat_value', 'fat']);
+
+          if (cal100 > 0) {
+            nutrients.calories = calculateNutrition(cal100, offGrams);
+            nutrients.protein = calculateNutrition(p100, offGrams);
+            nutrients.carbs = calculateNutrition(c100, offGrams);
+            nutrients.fat = calculateNutrition(f100, offGrams);
+          } else {
+            nutrients.calories = Math.round(getNutrientVal(n, ['energy-kcal_serving', 'energy_serving']));
+            if (n['energy_serving'] && !n['energy-kcal_serving']) nutrients.calories = Math.round(nutrients.calories / 4.184);
+            nutrients.protein = getNutrientVal(n, ['proteins_serving']);
+            nutrients.carbs = getNutrientVal(n, ['carbohydrates_serving']);
+            nutrients.fat = getNutrientVal(n, ['fat_serving']);
+          }
+
+          if (offProduct.image_url || offProduct.image_front_url) {
+            imageUrl = offProduct.image_url || offProduct.image_front_url;
+          }
+          resultFoodName = offProduct.product_name || offProduct.product_name_en || name;
+        }
+      } catch (e) {
+        console.error('OFF search fallback error:', e.message);
+      }
+    }
+
+    // Calculate final grams based on unit & quantity requested
+    let cleanName = name.toLowerCase().split(' ')[0].replace(/s$/, '');
+    let grams = 100;
+    if (unit === 'g') grams = Number(quantity);
+    else if (unit === 'kg') grams = Number(quantity) * 1000;
+    else if (unit === 'ml') grams = Number(quantity);
+    else if (unit === 'pieces') grams = Number(quantity) * (pieceWeights[cleanName] || 100);
+    else grams = Number(quantity) * 100; // serving
+
+    // Fetch Pixabay image if missing
+    if (!imageUrl) {
+      try {
+        const cleanQ = name.split(',')[0].split(' ')[0];
+        const pixRes = await axios.get(
+          `https://pixabay.com/api/?key=${process.env.PIXABAY_API_KEY}&q=${encodeURIComponent(cleanQ + ' food')}&image_type=photo&category=food&safesearch=true&per_page=3`
+        );
+        if (pixRes.data.hits?.length > 0) imageUrl = pixRes.data.hits[0].webformatURL;
+      } catch (e) {}
+    }
+
+    res.json({
+      name: resultFoodName,
       calories: calculateNutrition(nutrients.calories, grams),
       protein: calculateNutrition(nutrients.protein, grams),
       carbs: calculateNutrition(nutrients.carbs, grams),
       fat: calculateNutrition(nutrients.fat, grams),
-      imageUrl
+      imageUrl,
     });
-
   } catch (err) {
-    res.status(500).send(err.message);
+    console.error('search-food:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// 📷 BARCODE
+// ── BARCODE ──────────────────────────────────────────────────────────────────
 app.get('/barcode/:code', async (req, res) => {
   try {
     const r = await axios.get(
       `https://world.openfoodfacts.org/api/v0/product/${req.params.code}.json`
     );
 
-    if (r.data.status === 0) return res.status(404).send("Not found");
+    if (r.data.status === 0 || !r.data.product) return res.status(404).json({ error: 'Product not found' });
 
     const p = r.data.product;
-    const quantityText =
-          p.serving_size ||
-          p.quantity ||
-          p.product_quantity ||
-          "100g";
-
+    const quantityText = p.serving_size || p.quantity || p.product_quantity || '100g';
     const grams = extractGrams(quantityText);
-    const name = p.product_name || "Unknown Item";
+    const n = p.nutriments || {};
 
-    const nutrients = {
-      calories: Number(p.nutriments['energy-kcal_100g']) || 0,
-      protein: Number(p.nutriments.proteins_100g) || 0,
-      carbs: Number(p.nutriments.carbohydrates_100g) || 0,
-      fat: Number(p.nutriments.fat_100g) || 0
-    };
+    // 1. Try per-100g values first
+    let cal100 = getNutrientVal(n, ['energy-kcal_100g', 'energy-kcal_value', 'energy-kcal', 'energy_100g']);
+    if (cal100 > 0 && n['energy_100g'] && !n['energy-kcal_100g'] && !n['energy-kcal_value']) {
+      // Convert kJ -> kcal if energy_100g is in kJ
+      cal100 = Math.round(cal100 / 4.184);
+    }
 
-    res.send({
-      name: name,
-      calories: calculateNutrition(nutrients.calories, grams),
-      protein: calculateNutrition(nutrients.protein, grams),
-      carbs: calculateNutrition(nutrients.carbs, grams),
-      fat: calculateNutrition(nutrients.fat, grams),
-      imageUrl: p.image_url || ""
+    let p100 = getNutrientVal(n, ['proteins_100g', 'proteins_value', 'proteins']);
+    let c100 = getNutrientVal(n, ['carbohydrates_100g', 'carbohydrates_value', 'carbohydrates']);
+    let f100 = getNutrientVal(n, ['fat_100g', 'fat_value', 'fat']);
+
+    let totalCals = 0, totalProtein = 0, totalCarbs = 0, totalFat = 0;
+
+    if (cal100 > 0) {
+      // Calculate packet proportion based on net grams
+      totalCals = Math.round(calculateNutrition(cal100, grams));
+      totalProtein = calculateNutrition(p100, grams);
+      totalCarbs = calculateNutrition(c100, grams);
+      totalFat = calculateNutrition(f100, grams);
+    } else {
+      // Fallback to per-serving values directly if 100g values are missing
+      totalCals = Math.round(getNutrientVal(n, ['energy-kcal_serving', 'energy_serving']));
+      if (n['energy_serving'] && !n['energy-kcal_serving']) totalCals = Math.round(totalCals / 4.184);
+      totalProtein = getNutrientVal(n, ['proteins_serving']);
+      totalCarbs = getNutrientVal(n, ['carbohydrates_serving']);
+      totalFat = getNutrientVal(n, ['fat_serving']);
+    }
+
+    const unitType = (String(quantityText).toLowerCase().includes('ml') || String(quantityText).toLowerCase().includes('l')) ? 'ml' : 'g';
+
+    res.json({
+      name: p.product_name || p.product_name_en || 'Unknown Item',
+      calories: totalCals,
+      protein: totalProtein,
+      carbs: totalCarbs,
+      fat: totalFat,
+      quantity: grams,
+      unit: unitType,
+      imageUrl: p.image_url || p.image_front_url || '',
     });
-
   } catch (err) {
-    res.status(500).send(err.message);
+    console.error('barcode:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// 🚀 START SERVER
-const PORT = process.env.PORT || 3000;
+// ── AI IMAGE ANALYSIS (Gemini Flash) ─────────────────────────────────────────
+app.post('/analyze-image', aiLimiter, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image uploaded' });
+    }
 
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'AI service not configured' });
+    }
+
+    const imageBase64 = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype || 'image/jpeg';
+
+    const prompt = `You are a nutrition expert AI. Analyze this food image and identify the food item(s) visible.
+
+Respond with ONLY a valid JSON object in exactly this format (no extra text, no markdown):
+{
+  "name": "food name (be specific, e.g. 'Grilled Chicken Breast' not just 'chicken')",
+  "calories": <number, estimated total calories in the visible portion>,
+  "protein": <number, grams of protein>,
+  "carbs": <number, grams of carbohydrates>,
+  "fat": <number, grams of fat>,
+  "confidence": "<high|medium|low>"
+}
+
+If you cannot identify food in the image, return:
+{"name":"Unknown Food","calories":0,"protein":0,"carbs":0,"fat":0,"confidence":"low"}
+
+Base estimates on a typical single serving portion visible in the image.`;
+
+    const geminiRes = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        contents: [{
+          parts: [
+            { text: prompt },
+            {
+              inline_data: {
+                mime_type: mimeType,
+                data: imageBase64,
+              }
+            }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 256,
+        }
+      },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+
+    const rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    console.log('Gemini raw response:', rawText);
+
+    // Extract JSON from response (handles markdown code blocks too)
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return res.status(422).json({ error: 'Could not parse AI response' });
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    res.json({
+      name: String(parsed.name || 'Unknown Food'),
+      calories: Number(parsed.calories) || 0,
+      protein: Number(parsed.protein) || 0,
+      carbs: Number(parsed.carbs) || 0,
+      fat: Number(parsed.fat) || 0,
+      imageUrl: '',
+      confidence: String(parsed.confidence || 'medium'),
+    });
+
+  } catch (err) {
+    console.error('analyze-image error:', err.response?.data || err.message);
+    if (err.response?.status === 429) {
+      return res.status(429).json({ error: 'AI service busy. Please try again.' });
+    }
+    res.status(500).json({ error: 'Image analysis failed. Please try again.' });
+  }
+});
+
+// ── Health Check ─────────────────────────────────────────────────────────────
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ── Start Server ─────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on ${PORT}`);
+  console.log(`✅ Calorimeter backend running on port ${PORT}`);
 });
