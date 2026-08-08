@@ -1,24 +1,29 @@
-# ---------------------------
-# ANDROID / IDE
-# ---------------------------
+# Android
+.gradle/
+build/
+app/build/
+local.properties
+
+# Release files
+*.aab
+*.apk
+build_output.txt
+
+# Signing
+keystore/
+*.jks
+*.keystore
+
+# Firebase
+app/google-services.json
+
+# Node.js
+node_modules/
+.env
+
+# Backend secrets/config
+calorimeter-backend/config/
+
+# IDE
+.idea/
 *.iml
-.gradle
-/local.properties
-/.idea/
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-
-# ---------------------------
-# BACKEND (Node.js inside project)
-# ---------------------------
-calorimeter-backend/node_modules/
-calorimeter-backend/.env
-calorimeter-backend/config/serviceAccountKey.json
-
-# ---------------------------
-# OPTIONAL (extra safety)
-# ---------------------------
-*.log

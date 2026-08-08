@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Calorimeter App</string>
+    <string name="default_web_client_id">475842690746-356ffnvv6gae25v65v4ksk1o2ugibp7o.apps.googleusercontent.com</string>
 </resources>
