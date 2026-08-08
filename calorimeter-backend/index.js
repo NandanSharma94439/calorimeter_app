@@ -397,14 +397,22 @@ If you cannot identify food in the image, return:
 
 Base estimates on a typical single serving portion visible in the image.`;
 
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash-8b'];
+    const endpoints = [
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
+    ];
+
     let rawText = '';
     let lastError = null;
+    let isQuotaError = false;
 
-    for (const model of models) {
+    for (const url of endpoints) {
       try {
         const geminiRes = await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+          url,
           {
             contents: [{
               parts: [
@@ -430,16 +438,19 @@ Base estimates on a typical single serving portion visible in the image.`;
       } catch (err) {
         const status = err.response?.status;
         const msg = err.response?.data?.error?.message || err.message;
-        console.error(`Gemini model ${model} error (${status}):`, msg);
+        console.error(`Gemini endpoint error (${status}):`, msg);
 
-        // If rate limited or quota exceeded, notify user directly
         if (status === 429 || (msg && (msg.includes('Quota exceeded') || msg.includes('quota')))) {
-          return res.status(429).json({
-            error: 'Gemini free quota limit reached. Please wait 15 seconds and try again.'
-          });
+          isQuotaError = true;
         }
         lastError = err;
       }
+    }
+
+    if (!rawText && isQuotaError) {
+      return res.status(429).json({
+        error: 'Gemini free tier quota limit reached on this API key. Please try again in 30 seconds or create a new free key at aistudio.google.com.'
+      });
     }
 
     if (!rawText && lastError) {

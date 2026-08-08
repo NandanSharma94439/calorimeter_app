@@ -45,9 +45,18 @@ class FoodRepository {
             NetworkResult.Success(call())
         } catch (e: retrofit2.HttpException) {
             val code = e.code()
-            val msg = e.response()?.errorBody()?.string() ?: e.message()
-            Log.e("FoodRepository", "HTTP $code: $msg")
-            NetworkResult.Error("Server error ($code)", code)
+            val rawMsg = try { e.response()?.errorBody()?.string() } catch (ignore: Exception) { null }
+            Log.e("FoodRepository", "HTTP $code: $rawMsg")
+            val parsedMsg = try {
+                if (!rawMsg.isNullOrBlank()) {
+                    val json = org.json.JSONObject(rawMsg)
+                    json.optString("error", rawMsg)
+                } else null
+            } catch (ignore: Exception) {
+                rawMsg
+            }
+            val displayMessage = if (!parsedMsg.isNullOrBlank()) parsedMsg else "Server error ($code)"
+            NetworkResult.Error(displayMessage, code)
         } catch (e: java.io.IOException) {
             Log.e("FoodRepository", "Network error: ${e.message}")
             NetworkResult.Error("Network error. Check your connection.")
