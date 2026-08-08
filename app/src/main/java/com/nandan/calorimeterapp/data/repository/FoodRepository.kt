@@ -3,6 +3,7 @@ package com.nandan.calorimeterapp.data.repository
 import android.util.Log
 import com.nandan.calorimeterapp.data.model.*
 import com.nandan.calorimeterapp.data.network.ApiClient
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -31,7 +32,8 @@ class FoodRepository {
     }
 
     suspend fun analyzeImage(imageBytes: ByteArray): NetworkResult<AnalyzeResult> = safeCall {
-        val requestBody = imageBytes.toRequestBody()
+        val mediaType = "image/jpeg".toMediaTypeOrNull()
+        val requestBody = imageBytes.toRequestBody(mediaType)
         val part = MultipartBody.Part.createFormData("image", "photo.jpg", requestBody)
         api.analyzeImage(part)
     }

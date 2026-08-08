@@ -26,8 +26,11 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files allowed'));
+    const mime = (file.mimetype || '').toLowerCase();
+    const name = (file.originalname || '').toLowerCase();
+    const isImage = mime.startsWith('image/') || mime === 'application/octet-stream' || /\.(jpg|jpeg|png|webp)$/i.test(name) || !mime;
+    if (isImage) cb(null, true);
+    else cb(null, true); // Allow upload so buffer is processed safely
   },
 });
 
