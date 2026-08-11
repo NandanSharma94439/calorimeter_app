@@ -504,7 +504,7 @@ app.get('/streak/:uid', async (req, res) => {
         longestStreak: 0,
         lastCompletedDate: "",
         totalTrackingDays: 0,
-        streakFreezeAvailable: 1,
+        streakFreezeAvailable: 2,
         streakFreezeUsedDate: "",
         milestones: [],
         history: []
@@ -534,7 +534,7 @@ app.post('/streak/update', async (req, res) => {
         longestStreak: 0,
         lastCompletedDate: "",
         totalTrackingDays: 0,
-        streakFreezeAvailable: 1,
+        streakFreezeAvailable: 2,
         streakFreezeUsedDate: "",
         milestones: [],
         history: []
@@ -607,6 +607,11 @@ app.post('/streak/update', async (req, res) => {
         if (!data.milestones.includes(data.currentStreak)) {
           data.milestones.push(data.currentStreak);
         }
+      }
+
+      // Renew streak freezes to 2 every 30 days of continuous streak
+      if (data.currentStreak > 0 && data.currentStreak % 30 === 0) {
+        data.streakFreezeAvailable = 2;
       }
 
       transaction.set(docRef, data, { merge: true });
