@@ -54,7 +54,9 @@ fun HomeScreen(
     onShowAddFood: () -> Unit,
     onShowCamera: () -> Unit,
     onShowBarcode: () -> Unit,
+    onShowStreak: () -> Unit,
     homeViewModel: HomeViewModel = viewModel(),
+    streakViewModel: com.nandan.calorimeterapp.ui.streak.StreakViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val uiState by homeViewModel.uiState.collectAsStateWithLifecycle()
@@ -165,6 +167,15 @@ fun HomeScreen(
                     fat = totals.second.third,
                     modifier = Modifier.padding(16.dp),
                 )
+                
+                val streakState by streakViewModel.uiState.collectAsStateWithLifecycle()
+                LaunchedEffect(uid) { streakViewModel.loadStreak(uid) }
+                Box(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+                    com.nandan.calorimeterapp.ui.streak.StreakCard(
+                        streakData = streakState.streakData,
+                        onClick = onShowStreak
+                    )
+                }
             }
 
             // Insight banner

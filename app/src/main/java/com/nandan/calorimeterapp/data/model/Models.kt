@@ -1,9 +1,11 @@
 package com.nandan.calorimeterapp.data.model
 
+import androidx.annotation.Keep
 import com.google.gson.annotations.SerializedName
 
 // ── Request models ──────────────────────────────────────────────────────────
 
+@Keep
 data class FoodRequest(
     val uid: String,
     val foodName: String,
@@ -16,8 +18,27 @@ data class FoodRequest(
     val unit: String,
 )
 
+@Keep
+data class StreakUpdateRequest(
+    val uid: String,
+    val date: String,
+)
+
 // ── Response models ─────────────────────────────────────────────────────────
 
+@Keep
+data class StreakData(
+    val currentStreak: Int = 0,
+    val longestStreak: Int = 0,
+    val lastCompletedDate: String = "",
+    val totalTrackingDays: Int = 0,
+    val streakFreezeAvailable: Int = 0,
+    val streakFreezeUsedDate: String = "",
+    val milestones: List<Int> = emptyList(),
+    val history: List<String> = emptyList(),
+)
+
+@Keep
 data class FoodItem(
     val id: String = "",
     val uid: String = "",
@@ -31,6 +52,7 @@ data class FoodItem(
     val unit: String = "serving",
 )
 
+@Keep
 data class SearchResult(
     val name: String = "",
     val calories: Double = 0.0,
@@ -40,6 +62,7 @@ data class SearchResult(
     val imageUrl: String = "",
 )
 
+@Keep
 data class BarcodeResult(
     val name: String = "",
     val calories: Double = 0.0,
@@ -51,6 +74,7 @@ data class BarcodeResult(
     val unit: String = "serving",
 )
 
+@Keep
 data class AnalyzeResult(
     val name: String = "",
     val calories: Double = 0.0,
@@ -61,6 +85,7 @@ data class AnalyzeResult(
     val confidence: String = "",
 )
 
+@Keep
 data class SimpleResponse(
     val message: String? = null,
     val error: String? = null,
@@ -73,3 +98,4 @@ sealed class NetworkResult<out T> {
     data class Error(val message: String, val code: Int = -1) : NetworkResult<Nothing>()
     data object Loading : NetworkResult<Nothing>()
 }
+

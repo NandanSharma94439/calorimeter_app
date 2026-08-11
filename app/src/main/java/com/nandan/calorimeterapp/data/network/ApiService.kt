@@ -38,4 +38,12 @@ interface ApiService {
     suspend fun analyzeImage(
         @Part image: MultipartBody.Part,
     ): AnalyzeResult
+
+    // ── Streak ───────────────────────────────────────────────────────────────
+
+    @GET("streak/{uid}")
+    suspend fun getStreak(@Path("uid") uid: String): StreakData
+
+    @POST("streak/update")
+    suspend fun updateStreak(@Body request: StreakUpdateRequest): SimpleResponse
 }

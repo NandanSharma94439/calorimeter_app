@@ -34,6 +34,7 @@ sealed class AppScreen {
     data object Auth : AppScreen()
     data object Onboarding : AppScreen()
     data object Home : AppScreen()
+    data object Streak : AppScreen()
 }
 
 @Composable
@@ -80,6 +81,7 @@ fun AppNavigation(
     // Shared ViewModels
     val homeViewModel: HomeViewModel = viewModel()
     val addFoodViewModel: AddFoodViewModel = viewModel()
+    val streakViewModel: com.nandan.calorimeterapp.ui.streak.StreakViewModel = viewModel()
 
     // Repository for barcode lookup (no ViewModel needed — fire-and-forget pattern)
     val foodRepository = remember { FoodRepository() }
@@ -133,7 +135,16 @@ fun AppNavigation(
                         onShowAddFood = { showAddFood = true },
                         onShowCamera = { showCamera = true },
                         onShowBarcode = { showBarcode = true },
+                        onShowStreak = { screen = AppScreen.Streak },
                         homeViewModel = homeViewModel,
+                        streakViewModel = streakViewModel,
+                    )
+                }
+                is AppScreen.Streak -> {
+                    com.nandan.calorimeterapp.ui.streak.StreakScreen(
+                        uid = uid,
+                        viewModel = streakViewModel,
+                        onBack = { screen = AppScreen.Home }
                     )
                 }
             }

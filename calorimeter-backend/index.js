@@ -487,6 +487,138 @@ Base estimates on a typical single serving portion visible in the image.`;
   }
 });
 
+// ── STREAK LOGIC ─────────────────────────────────────────────────────────────
+const STREAKS_COLLECTION = 'streaks';
+
+app.get('/streak/:uid', async (req, res) => {
+  try {
+    const { uid } = req.params;
+    if (!uid) return res.status(400).json({ error: 'uid is required' });
+
+    const docRef = db.collection(STREAKS_COLLECTION).doc(uid);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return res.json({
+        currentStreak: 0,
+        longestStreak: 0,
+        lastCompletedDate: "",
+        totalTrackingDays: 0,
+        streakFreezeAvailable: 1,
+        streakFreezeUsedDate: "",
+        milestones: [],
+        history: []
+      });
+    }
+
+    res.json(doc.data());
+  } catch (err) {
+    console.error('get-streak:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/streak/update', async (req, res) => {
+  try {
+    const { uid, date } = req.body;
+    if (!uid || !date) {
+      return res.status(400).json({ error: 'uid and date are required' });
+    }
+
+    const docRef = db.collection(STREAKS_COLLECTION).doc(uid);
+
+    await db.runTransaction(async (transaction) => {
+      const doc = await transaction.get(docRef);
+      let data = doc.exists ? doc.data() : {
+        currentStreak: 0,
+        longestStreak: 0,
+        lastCompletedDate: "",
+        totalTrackingDays: 0,
+        streakFreezeAvailable: 1,
+        streakFreezeUsedDate: "",
+        milestones: [],
+        history: []
+      };
+
+      if (!data.history) data.history = [];
+
+      if (data.lastCompletedDate === date) {
+        // Idempotent: already logged today
+        return;
+      }
+
+      const today = new Date(date);
+      let yesterdayStr = "";
+      if (data.lastCompletedDate) {
+        const lastDate = new Date(data.lastCompletedDate);
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        yesterdayStr = yesterday.toISOString().split('T')[0];
+      }
+
+      if (!data.lastCompletedDate) {
+        // First ever log
+        data.currentStreak = 1;
+        data.lastCompletedDate = date;
+        data.totalTrackingDays += 1;
+      } else if (data.lastCompletedDate === yesterdayStr) {
+        // Consecutive log
+        data.currentStreak += 1;
+        data.lastCompletedDate = date;
+        data.totalTrackingDays += 1;
+      } else {
+        // Missed one or more days. Check for freeze.
+        const lastDate = new Date(data.lastCompletedDate);
+        const dayBeforeYesterday = new Date(today);
+        dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+        const dayBeforeYesterdayStr = dayBeforeYesterday.toISOString().split('T')[0];
+
+        if (data.lastCompletedDate === dayBeforeYesterdayStr && data.streakFreezeAvailable > 0) {
+          // Used freeze for yesterday
+          data.streakFreezeAvailable -= 1;
+          data.streakFreezeUsedDate = yesterdayStr;
+          data.currentStreak += 1; // It was frozen yesterday, and today they logged
+          data.lastCompletedDate = date;
+          data.totalTrackingDays += 1;
+        } else {
+          // Streak broken
+          data.currentStreak = 1;
+          data.lastCompletedDate = date;
+          data.totalTrackingDays += 1;
+        }
+      }
+
+      if (data.currentStreak > data.longestStreak) {
+        data.longestStreak = data.currentStreak;
+      }
+
+      if (!data.history.includes(date)) {
+        data.history.push(date);
+        // keep only the last 30 days
+        if (data.history.length > 30) {
+          data.history.shift();
+        }
+      }
+
+      // Check milestones
+      const MILESTONES = [3, 7, 14, 30, 60, 100];
+      if (MILESTONES.includes(data.currentStreak)) {
+        if (!data.milestones) data.milestones = [];
+        if (!data.milestones.includes(data.currentStreak)) {
+          data.milestones.push(data.currentStreak);
+        }
+      }
+
+      transaction.set(docRef, data, { merge: true });
+    });
+
+    res.json({ message: 'Success' });
+  } catch (err) {
+    console.error('update-streak:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

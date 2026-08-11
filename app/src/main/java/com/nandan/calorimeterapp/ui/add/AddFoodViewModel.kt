@@ -178,6 +178,9 @@ class AddFoodViewModel : ViewModel() {
             )
             when (val result = repository.addFood(request)) {
                 is NetworkResult.Success -> {
+                    val streakRepo = com.nandan.calorimeterapp.data.repository.StreakRepository()
+                    val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                    streakRepo.updateStreak(uid, date)
                     _uiState.value = AddFoodUiState(saveSuccess = true)
                 }
                 is NetworkResult.Error -> {
