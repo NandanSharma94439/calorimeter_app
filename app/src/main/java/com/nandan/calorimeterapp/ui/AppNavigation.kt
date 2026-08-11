@@ -158,6 +158,7 @@ fun AppNavigation(
                 onSuccess = {
                     showAddFood = false
                     homeViewModel.loadFoods(uid)
+                    streakViewModel.loadStreak(uid)
                     interstitialAd?.let { ad ->
                         ad.show(context as Activity)
                         interstitialAd = null
