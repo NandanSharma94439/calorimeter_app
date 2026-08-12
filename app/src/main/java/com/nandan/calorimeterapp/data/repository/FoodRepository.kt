@@ -60,6 +60,8 @@ class FoodRepository {
         } catch (e: java.io.IOException) {
             Log.e("FoodRepository", "Network error: ${e.message}")
             NetworkResult.Error("Network error. Check your connection.")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("FoodRepository", "Unknown error: ${e.message}")
             NetworkResult.Error(e.message ?: "Unknown error")

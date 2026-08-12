@@ -45,12 +45,17 @@ class AddFoodViewModel : ViewModel() {
                 .distinctUntilChanged()
                 .filter { (name, qty, _) -> name.length >= 2 && qty > 0 }
                 .collectLatest { (name, qty, unit) ->
-                    performSearch(name, qty, unit)
+                    searchJob?.cancel()
+                    searchJob = viewModelScope.launch {
+                        performSearch(name, qty, unit)
+                    }
+                    searchJob?.join()
                 }
         }
     }
 
     fun onFoodNameChanged(name: String) {
+        searchJob?.cancel()
         _uiState.value = _uiState.value.copy(foodName = name)
         if (name.length >= 2) {
             val state = _uiState.value
@@ -61,6 +66,7 @@ class AddFoodViewModel : ViewModel() {
     }
 
     fun onQuantityChanged(qty: Double) {
+        searchJob?.cancel()
         _uiState.value = _uiState.value.copy(quantity = qty)
         val state = _uiState.value
         if (state.foodName.length >= 2) {
@@ -71,6 +77,7 @@ class AddFoodViewModel : ViewModel() {
     }
 
     fun onUnitChanged(unit: String) {
+        searchJob?.cancel()
         _uiState.value = _uiState.value.copy(unit = unit)
         val state = _uiState.value
         if (state.foodName.length >= 2) {
@@ -85,9 +92,10 @@ class AddFoodViewModel : ViewModel() {
     }
 
     fun searchNow() {
+        searchJob?.cancel()
         val state = _uiState.value
         if (state.foodName.isNotBlank()) {
-            viewModelScope.launch { performSearch(state.foodName, state.quantity, state.unit) }
+            searchJob = viewModelScope.launch { performSearch(state.foodName, state.quantity, state.unit) }
         }
     }
 
@@ -97,7 +105,6 @@ class AddFoodViewModel : ViewModel() {
             is NetworkResult.Success -> {
                 val d = result.data
                 _uiState.value = _uiState.value.copy(
-                    foodName = d.name.ifBlank { _uiState.value.foodName },
                     calories = d.calories.toInt(),
                     protein = d.protein,
                     carbs = d.carbs,

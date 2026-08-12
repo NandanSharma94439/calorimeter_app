@@ -197,12 +197,16 @@ app.get('/search-food', async (req, res) => {
 
     // 1. Try USDA Search
     let food = null;
+    let usdaServingSize = 100;
     try {
       const usdaRes = await axios.get(
-        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(name)}&api_key=${process.env.USDA_API_KEY}&pageSize=1`
+        `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(name)}&api_key=${process.env.USDA_API_KEY}&pageSize=1&requireAllWords=true`
       );
       food = usdaRes.data.foods?.[0];
       if (food) {
+        if (food.servingSize > 0 && (food.servingSizeUnit === 'g' || food.servingSizeUnit === 'GRM' || food.servingSizeUnit === 'ml')) {
+          usdaServingSize = food.servingSize;
+        }
         resultFoodName = food.description;
         food.foodNutrients.forEach(n => {
           const nid = Number(n.nutrientId);
@@ -271,19 +275,18 @@ app.get('/search-food', async (req, res) => {
       }
     }
 
-    // Calculate final grams based on unit & quantity requested
     let cleanName = name.toLowerCase().split(' ')[0].replace(/s$/, '');
     let grams = 100;
     if (unit === 'g') grams = Number(quantity);
     else if (unit === 'kg') grams = Number(quantity) * 1000;
     else if (unit === 'ml') grams = Number(quantity);
-    else if (unit === 'pieces') grams = Number(quantity) * (pieceWeights[cleanName] || 100);
+    else if (unit === 'pieces') grams = Number(quantity) * (pieceWeights[cleanName] || usdaServingSize);
     else grams = Number(quantity) * 100; // serving
 
     // Fetch Pixabay image if missing
     if (!imageUrl) {
       try {
-        const cleanQ = name.split(',')[0].split(' ')[0];
+        const cleanQ = name.split(',')[0];
         const pixRes = await axios.get(
           `https://pixabay.com/api/?key=${process.env.PIXABAY_API_KEY}&q=${encodeURIComponent(cleanQ + ' food')}&image_type=photo&category=food&safesearch=true&per_page=3`
         );

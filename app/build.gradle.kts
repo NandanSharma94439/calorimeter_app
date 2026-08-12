@@ -12,8 +12,8 @@ android {
         applicationId = "com.nandan.calorimeterapp"
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
-        versionName = "4.0"
+        versionCode = 9
+        versionName = "5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -22,6 +22,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -62,8 +63,9 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.2.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.2.0")
 
-    // AndroidX Core
+    // AndroidX Core & WorkManager
     implementation(libs.androidx.core.ktx)
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
