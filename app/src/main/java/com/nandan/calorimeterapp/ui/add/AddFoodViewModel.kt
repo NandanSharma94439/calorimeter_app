@@ -46,10 +46,11 @@ class AddFoodViewModel : ViewModel() {
                 .filter { (name, qty, _) -> name.length >= 2 && qty > 0 }
                 .collectLatest { (name, qty, unit) ->
                     searchJob?.cancel()
-                    searchJob = viewModelScope.launch {
+                    val job = viewModelScope.launch {
                         performSearch(name, qty, unit)
                     }
-                    searchJob?.join()
+                    searchJob = job
+                    job.join()
                 }
         }
     }
@@ -103,6 +104,7 @@ class AddFoodViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(isSearching = true, searchError = null)
         when (val result = repository.searchFood(name, qty, unit)) {
             is NetworkResult.Success -> {
+                if (_uiState.value.foodName != name) return // Ignore stale network results
                 val d = result.data
                 _uiState.value = _uiState.value.copy(
                     calories = d.calories.toInt(),
@@ -114,6 +116,7 @@ class AddFoodViewModel : ViewModel() {
                 )
             }
             is NetworkResult.Error -> {
+                if (_uiState.value.foodName != name) return // Ignore stale network results
                 _uiState.value = _uiState.value.copy(
                     isSearching = false,
                     searchError = result.message,

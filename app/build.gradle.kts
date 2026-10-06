@@ -12,8 +12,8 @@ android {
         applicationId = "com.nandan.calorimeterapp"
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
-        versionName = "5.0"
+        versionCode = 10
+        versionName = "6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

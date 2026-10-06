@@ -368,7 +368,7 @@ app.get('/barcode/:code', async (req, res) => {
   }
 });
 
-// ── AI IMAGE ANALYSIS (Gemini Flash) ─────────────────────────────────────────
+// ── AI IMAGE ANALYSIS (Gemini 3.5 Flash) ─────────────────────────────────────
 app.post('/analyze-image', aiLimiter, upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
@@ -401,11 +401,14 @@ If you cannot identify food in the image, return:
 Base estimates on a typical single serving portion visible in the image.`;
 
     const endpoints = [
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      // Primary: latest models (highest availability, best performance)
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      // Fallback: stable Flash variants
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
+      // Legacy fallback: 1.5 series (kept for key compatibility)
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${GEMINI_API_KEY}`,
     ];
 
     let rawText = '';
