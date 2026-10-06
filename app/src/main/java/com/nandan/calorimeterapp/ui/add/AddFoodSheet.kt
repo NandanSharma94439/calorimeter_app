@@ -92,31 +92,14 @@ fun AddFoodSheet(
                     fontWeight = FontWeight.Bold,
                     color = OnBackground,
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                IconButton(
+                    onClick = onScanBarcode,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(SurfaceHighlight),
                 ) {
-                    IconButton(
-                        onClick = onScanBarcode,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(SurfaceHighlight),
-                    ) {
-                        Icon(Icons.Default.QrCodeScanner, null, tint = AccentBlue, modifier = Modifier.size(20.dp))
-                    }
-                    IconButton(
-                        onClick = {
-                            addViewModel.reset()
-                            onDismiss()
-                        },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(SurfaceHighlight),
-                    ) {
-                        Icon(Icons.Default.Close, "Close", tint = OnSurfaceMuted, modifier = Modifier.size(20.dp))
-                    }
+                    Icon(Icons.Default.QrCodeScanner, null, tint = AccentBlue, modifier = Modifier.size(20.dp))
                 }
             }
 
