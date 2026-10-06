@@ -209,4 +209,9 @@ class AddFoodViewModel : ViewModel() {
     fun clearError() {
         _uiState.value = _uiState.value.copy(searchError = null)
     }
+
+    fun reset() {
+        searchJob?.cancel()
+        _uiState.value = AddFoodUiState()
+    }
 }

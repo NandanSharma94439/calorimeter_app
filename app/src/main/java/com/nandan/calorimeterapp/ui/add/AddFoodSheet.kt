@@ -66,7 +66,10 @@ fun AddFoodSheet(
     }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            addViewModel.reset()
+            onDismiss()
+        },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = SurfaceCard,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
@@ -89,14 +92,31 @@ fun AddFoodSheet(
                     fontWeight = FontWeight.Bold,
                     color = OnBackground,
                 )
-                IconButton(
-                    onClick = onScanBarcode,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(SurfaceHighlight),
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Default.QrCodeScanner, null, tint = AccentBlue, modifier = Modifier.size(20.dp))
+                    IconButton(
+                        onClick = onScanBarcode,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceHighlight),
+                    ) {
+                        Icon(Icons.Default.QrCodeScanner, null, tint = AccentBlue, modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(
+                        onClick = {
+                            addViewModel.reset()
+                            onDismiss()
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceHighlight),
+                    ) {
+                        Icon(Icons.Default.Close, "Close", tint = OnSurfaceMuted, modifier = Modifier.size(20.dp))
+                    }
                 }
             }
 
@@ -223,6 +243,18 @@ fun AddFoodSheet(
                     Spacer(Modifier.width(8.dp))
                     Text("Add to Diary", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                 }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            TextButton(
+                onClick = {
+                    addViewModel.reset()
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Cancel", color = OnSurfaceMuted, fontSize = 14.sp)
             }
         }
     }

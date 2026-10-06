@@ -154,9 +154,13 @@ fun AppNavigation(
         if (showAddFood) {
             AddFoodSheet(
                 uid = uid,
-                onDismiss = { showAddFood = false },
+                onDismiss = {
+                    showAddFood = false
+                    addFoodViewModel.reset()
+                },
                 onSuccess = {
                     showAddFood = false
+                    addFoodViewModel.reset()
                     homeViewModel.loadFoods(uid)
                     streakViewModel.loadStreak(uid)
                     interstitialAd?.let { ad ->
@@ -167,6 +171,7 @@ fun AppNavigation(
                 },
                 onScanBarcode = {
                     showAddFood = false
+                    addFoodViewModel.reset()
                     showBarcode = true
                 },
                 addViewModel = addFoodViewModel,
